@@ -1,0 +1,99 @@
+services:
+  webserver:
+    image: nginx:latest
+    platform: linux/arm64/v8 # Dev Only
+    hostname: nginx
+    container_name: nginx
+    depends_on:
+      - webapp
+    restart: unless-stopped
+    networks:
+      my_custom_network:
+        ipv4_address: 10.0.1.1
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/config/default.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/logs:/var/log/nginx
+      - ./webapp:/app
+    environment:
+      - TZ=Europe/Paris
+
+  webapp:
+    build:
+      context: .
+      dockerfile: webapp.Dockerfile
+    platform: linux/arm64/v8 # Dev Only
+    hostname: webapp
+    container_name: webapp
+    depends_on:
+      - database
+      - mailer # Dev Only
+    restart: unless-stopped
+    networks:
+      my_custom_network:
+        ipv4_address: 10.0.2.1
+    # Dev Only
+    # ports: []
+    #  - "80:80"
+    #  - "443:443"
+    volumes:
+      - ./webapp:/app
+    environment:
+      - TZ=Europe/Paris
+    healthcheck:
+      test: ["CMD", "php-fpm-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  database:
+    image: postgres:16-alpine
+    platform: linux/arm64/v8 # Dev Only
+    hostname: database
+    container_name: database
+    restart: unless-stopped
+    shm_size: 128mb
+    networks:
+      my_custom_network:
+        ipv4_address: 10.0.2.2
+    expose: # @prod: replace expose with ports if you copy/paste this
+      - "5432:5432"
+    volumes:
+      - ./database:/var/lib/postgresql/data:rw
+    environment:
+      POSTGRES_DB: webapp
+      POSTGRES_PASSWORD: mysecretpassword
+      POSTGRES_USER: dbuser
+      TZ: Europe/Paris
+    healthcheck:
+      test: ["CMD", "pg_isready", "-d", "webapp", "-U", "dbuser"]
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # mailer:
+  #   hostname: mailer
+  #   container_name: mailer
+  #   image: axllent/mailpit
+  #   platform: linux/arm64/v8 # Dev Only
+  #   networks:
+  #     my_custom_network:
+  #       ipv4_address: 10.0.2.1
+  #   ports:
+  #     - "1025"
+  #     - "8025"
+  #   environment:
+  #     MP_SMTP_AUTH_ACCEPT_ANY: 1
+  #     MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
+networks:
+  my_custom_network:
+    driver: bridge
+    external: true
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.0.0.0/20 # IPs from 10.0.0.1 up to 10.0.15.254
+          gateway: 10.0.0.1
